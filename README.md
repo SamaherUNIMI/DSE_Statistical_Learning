@@ -9,7 +9,9 @@ The project aims to provide insights into WTA data using a combination of unsupe
 ### Key Components:
 
 👉 **Presentation:** Provides an overview of the project and its findings, offering a high-level perspective.
+
 👉 **Report:** Offers a detailed analysis of the methodologies, results, and interpretations.
+
 👉 **Notebook:** Contains the R code used for analysis, allowing for transparency and reproducibility.
 
 ## Methodology
