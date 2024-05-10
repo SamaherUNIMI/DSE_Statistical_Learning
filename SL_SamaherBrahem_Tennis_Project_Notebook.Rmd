@@ -1,0 +1,1033 @@
+---
+title: "WTA_Project_Notebook"
+author: "Samaher"
+date: "2024-04-19"
+output: html_document
+---
+
+## Data Description
+
+`tourney_id`: a unique identifier for each tournament.
+
+`tourney_name`: the name of the tournament
+
+`surface`: Hard, Clay, or Grass
+
+`draw_size`: number of players in the draw, often rounded up to the nearest power of 2. (For instance, a tournament with 28 players may be shown as 32.)
+
+`tourney_level`:
+'G' = Grand Slams
+'F' = WTA finals 
+'PM' = Premier Mandatory
+'P' = Premier
+'I' = International
+'D' is used for Federation/Fed/Billie Jean King Cup, and also for Wightman Cup and Bonne Bell Cup.
+
+`tourney_date`: eight digits, YYYYMMDD, usually the Monday of the tournament week.
+
+`match_num`: a match-specific identifier. Often starting from 1, sometimes counting down from 300, and sometimes arbitrary. 
+
+`winner_id`: the player_id used in this repo for the winner of the match
+
+`winner_seed`
+
+`winner_entry`:
+'WC' = wild card
+'Q' = qualifier
+'LL' = lucky loser
+'ALT' = Alternate 
+'SE' = Special Exemption
+'SR' = Special Exempt
+
+`winner_name`
+
+`winner_hand`: R = right, L = left, U = unknown. For ambidextrous players, this is their serving hand.
+
+`winner_ht`: height in centimeters, where available
+
+`winner_ioc`: three-character country code
+
+`winner_age`: age, in years, as of the tourney_date
+
+`loser_id`
+
+`loser_seed`
+
+`loser_entry`
+
+`loser_name`
+
+`loser_hand`
+
+`loser_ht`
+
+`loser_ioc`
+
+`loser_age`
+
+`score`
+
+`best_of`:'3', indicating the the number of sets for this match
+
+`round`
+
+`minutes`: match length, where available
+
+`w_ace`: winner's number of aces
+
+`w_df`: winner's number of doubles faults
+
+`w_svpt`: winner's number of serve points
+
+`w_1stIn`: winner's number of first serves made
+
+`w_1stWon`: winner's number of first-serve points won
+
+`w_2ndWon`: winner's number of second-serve points won
+
+`w_SvGms`: winner's number of serve games
+
+`w_bpSaved`: winner's number of break points saved
+
+`w_bpFaced`: winner's number of break points faced
+
+`l_ace`
+
+`l_df`
+
+`l_svpt`
+
+`l_1stIn`
+
+`l_1stWon`
+
+`l_2ndWon`
+
+`l_SvGms`
+
+`l_bpSaved`
+
+`l_bpFaced`
+
+`winner_rank`: winner's WTA rank, as of the tourney_date, or the most recent ranking date before the tourney_date
+
+`winner_rank_points`: number of ranking points, where available
+
+`loser_rank`
+
+`loser_rank_points`
+
+## Data Preprocessing
+
+```{r}
+data <- read.csv("/Users/samaherbrahem/Documents/MSc DSE/Trimester 2/Statistical Learning/Individual Project/WTA/DSE_Statistical_Learning_Project/wta_matches_2023.csv")
+
+data_backup <- data
+
+```
+
+1. Removing incomplete games (due to injury, walkover, etc)
+
+```{r}
+# Remove rows where score column contains "RET" or "W/O"
+data <- subset(data, !(grepl("RET", score) | grepl("W/O", score)))
+```
+
+
+2. Splitting the score column set by set.
+
+```{r}
+# Split the score column into individual sets
+sets <- strsplit(data$score, " ")
+
+# Initialize vectors to store set scores
+w_set1 <- numeric(length(sets))
+l_set1 <- numeric(length(sets))
+w_set2 <- numeric(length(sets))
+l_set2 <- numeric(length(sets))
+w_set3 <- numeric(length(sets))
+l_set3 <- numeric(length(sets))
+
+# Loop through each set and extract scores
+for (i in seq_along(sets)) {
+  scores <- gsub("\\(.*?\\)", "", sets[[i]])  # Remove numbers within parentheses
+  scores <- unlist(strsplit(scores, "-"))
+  w_set1[i] <- as.numeric(scores[1])
+  l_set1[i] <- as.numeric(scores[2])
+  if (length(scores) > 2) {
+    w_set2[i] <- as.numeric(scores[3])
+    l_set2[i] <- as.numeric(scores[4])
+    if (length(scores) > 4) {
+      w_set3[i] <- as.numeric(scores[5])
+      l_set3[i] <- as.numeric(scores[6])
+    }
+  }
+}
+
+# Create new dataframe with set scores
+set_scores <- data.frame(
+  w_set1 = w_set1,
+  l_set1 = l_set1,
+  w_set2 = w_set2,
+  l_set2 = l_set2,
+  w_set3 = w_set3,
+  l_set3 = l_set3
+)
+
+# Combine the new dataframe with the original dataset
+data <- cbind(data, set_scores)
+
+# Remove sets and set_scores since they're no longer needed
+remove(sets, set_scores)
+
+```
+
+3. Encoding categorical variables
+
+I want to highlight the fact that match is played in Grand Slam or not. We can get this info from `tourney_level`
+
+```{r}
+data$grand_slam <- 0
+data$grand_slam[data$tourney_level == 'G'] <- 1
+
+```
+
+I want to highlight the fact that a match is in final rounds (Quarter final, Semi final, or Final) as opposed to preliminary rounds. We can get this info from `round`
+
+```{r}
+# Initialize "final_rounds" column with zeros
+data$final_rounds <- 0
+
+# Set the value to 1 for "QF", "SF", and "F"
+data$final_rounds[data$round %in% c("QF", "SF", "F")] <- 1
+```
+
+Now I will reorder columns just for organizational reasons.
+
+```{r}
+library(dplyr)
+
+# Reordering columns
+data <- data %>%
+  select(X, tourney_id, tourney_name, surface, draw_size, tourney_level, grand_slam, tourney_date, match_num,
+         winner_id, winner_seed, winner_entry, winner_name, winner_hand, winner_ht, winner_ioc,
+         winner_age, loser_id, loser_seed, loser_entry, loser_name, loser_hand, loser_ht, loser_ioc,
+         loser_age, score, w_set1, l_set1, w_set2, l_set2, w_set3, l_set3, best_of, round, final_rounds, everything())
+```
+
+4. Removing unnecessary columns
+
+```{r}
+
+data <- data[, !colnames(data) %in% c("X", "tourney_id", "draw_size", "match_num", "tourney_date", "winner_seed", "winner_id", "winner_entry", "loser_seed", "loser_entry", "best_of","tourney_level","loser_id","score","round")]
+
+```
+
+5. Checking for null values and removing them
+
+```{r}
+# Check the number of null values in each column
+null_counts <- colSums(is.na(data))
+
+# Print the result
+print(null_counts)
+
+```
+
+```{r}
+# Remove rows with NA values
+data <- data[complete.cases(data), ]
+```
+
+
+6.creating a balanced dataset
+
+A. Winners' Point of view
+
+```{r}
+winner_pov <- data
+```
+
+```{r}
+# Identify columns containing "w_" or "winner_"
+winner_cols <- grep("w_", names(winner_pov)) 
+winner_cols <- c(winner_cols, grep("winner_", names(winner_pov))) 
+
+# Replace "w_" with "p_" and "winner_" with "player_"
+names(winner_pov)[winner_cols] <- gsub("w_", "p_", names(winner_pov)[winner_cols])
+names(winner_pov)[winner_cols] <- gsub("winner_", "player_", names(winner_pov)[winner_cols])
+
+# Identify columns containing "l_" or "loser_"
+loser_cols <- grep("l_", names(winner_pov)) 
+loser_cols <- c(loser_cols, grep("loser_", names(winner_pov))) # Columns with "loser_"
+
+# Replace "l_" with "o_" and "loser_" with "opponent_"
+names(winner_pov)[loser_cols] <- gsub("l_", "o_", names(winner_pov)[loser_cols])
+names(winner_pov)[loser_cols] <- gsub("loser_", "opponent_", names(winner_pov)[loser_cols])
+
+names(winner_pov)[names(winner_pov) == "finao_rounds"] <- "final_rounds"
+```
+
+now let's add the response variable `win` 
+
+```{r}
+winner_pov <- cbind(win = 1, winner_pov)
+```
+
+B. Losers' Point of view
+
+```{r}
+loser_pov <- data
+```
+
+```{r}
+# Identify columns containing "w_" or "winner_"
+opponent_cols <- grep("w_", names(loser_pov)) 
+opponent_cols <- c(opponent_cols, grep("winner_", names(loser_pov))) 
+
+# Replace "w_" with "o_" and "winner_" with "opponent_"
+names(loser_pov)[opponent_cols] <- gsub("w_", "o_", names(loser_pov)[opponent_cols])
+names(loser_pov)[opponent_cols] <- gsub("winner_", "opponent_", names(loser_pov)[opponent_cols])
+
+# Identify columns containing "l_" or "loser_"
+player_cols <- grep("l_", names(loser_pov)) 
+player_cols <- c(player_cols, grep("loser_", names(loser_pov))) 
+
+# Replace "l_" with "p_" and "loser_" with "player_"
+names(loser_pov)[player_cols] <- gsub("l_", "p_", names(loser_pov)[player_cols])
+names(loser_pov)[player_cols] <- gsub("loser_", "player_", names(loser_pov)[player_cols])
+
+# Rename the "finap_rounds" column to "final_rounds"
+names(loser_pov)[names(loser_pov) == "finap_rounds"] <- "final_rounds"
+
+```
+
+now let's add the response variable `win` 
+
+```{r}
+loser_pov <- cbind(win = 0, loser_pov)
+```
+
+Reordering again for organizational reasons
+
+```{r}
+# Reorder columns of loser_pov to match winner_pov
+loser_pov <- loser_pov[, names(winner_pov)]
+```
+
+Now, let's merge both povs into 1 balanced data frame.
+
+```{r}
+# Add a variable to indicate the source (winner or loser)
+winner_pov$source <- "winner"
+loser_pov$source <- "loser"
+
+# Merge the data frames
+merged_data <- rbind(winner_pov, loser_pov)
+
+# Randomly shuffle the merged data frame
+set.seed(123) # Set seed for reproducibility
+merged_data <- merged_data[sample(nrow(merged_data)), ]
+
+# Select the first 50% of the observations
+n_obs <- nrow(merged_data)
+n_selected <- n_obs / 2
+selected_data <- merged_data[1:n_selected, ]
+
+# Remove the source variable
+selected_data$source <- NULL
+
+```
+
+```{r}
+# Compute the percentage of observations where win = 1 in the selected data
+percentage_win_1 <- (sum(selected_data$win == 1) / nrow(selected_data)) * 100
+
+percentage_win_1
+
+
+# Compute the percentage of observations where win = 0 in the selected data
+percentage_win_0 <- (sum(selected_data$win == 0) / nrow(selected_data)) * 100
+
+percentage_win_0
+
+```
+
+
+Renaming the data and removing unnecessary dataframes
+
+```{r}
+data <- selected_data 
+
+remove(winner_pov, loser_pov, merged_data, selected_data)
+
+```
+
+7. Limiting the data only to top 100 players for consistency reasons
+
+```{r}
+data <- data[data$player_rank <= 100 & data$opponent_rank <= 100, ]
+numeric_data <- data[, sapply(data, is.numeric) & !names(data) %in% c("win", "GS", "final_rounds")]
+```
+
+8. Scaling Numerical Variables
+
+```{r}
+# Select only numeric columns except for "win", "GS", and "final_rounds"
+numeric_data <- data[, sapply(data, is.numeric) & !names(data) %in% c("win", "final_rounds","grand_slam")]
+
+# Scale the numeric columns
+scaled_numeric_data <- scale(numeric_data)
+
+# Combine the scaled numeric columns with the non-numeric columns
+scaled_data <- cbind(data[, !sapply(data, is.numeric) | names(data) %in% c("win", "final_rounds","grand_slam")], scaled_numeric_data)
+
+remove(scaled_numeric_data, numeric_data)
+
+```
+
+
+## Data Understanding
+
+1. variables distribution 
+
+```{r}
+
+library(ggplot2)
+
+# Select only numerical variables
+numerical_vars <- sapply(data, is.numeric)
+data_subset <- data[, numerical_vars]
+
+# Gather the data
+data_long <- tidyr::gather(data_subset)
+
+# Plot the histogram
+ggplot(data_long, aes(x = value)) +
+  geom_histogram(color = "black", fill = "#7bc133", bins = 30) +
+  labs(title = "Variable Distribution") +
+  facet_wrap(~ key, scales = "free") +
+  theme_minimal()
+
+remove(numerical_vars, data_subset,data_long)
+
+```
+
+
+
+2. Checking outliers
+
+```{r}
+library(ggplot2)
+
+# Select only numerical variables excluding 'win', 'GS', and 'final_rounds'
+numerical_vars <- sapply(scaled_data, is.numeric)
+data_numeric <- scaled_data[, numerical_vars]
+data_numeric <- data_numeric[, !(names(data_numeric) %in% c("win", "grand_slam", "final_rounds"))]
+
+# Convert data to long format
+data_long <- tidyr::gather(data_numeric, key = "variable", value = "value")
+
+# Create boxplot using ggplot2
+ggplot(data_long, aes(x = variable, y = value)) +
+  geom_boxplot(fill = "#7bc133", color = "black") +
+  labs(x = NULL, y = NULL, title = "Boxplots of Scaled Numerical Variables") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+remove(data_long, numerical_vars,data_numeric)
+
+```
+
+As you can see, I found some outliers in the data. But after looking at each variable separately and considering what I know about the game, I realized that most of these outliers were actually valid data points, not mistakes. So, I decided to keep them because they provide valuable insights into the full picture. Nevertheles, I corrected the ones I spotted, like this example where in the data set we have the length of the match between Ons Jabeur and Camila Osorio was 316 minutes but when I checked in the WTA it was 122 minutes only.
+
+```{r}
+library(ggplot2)
+
+# Plot histogram of minutes distribution
+ggplot(data, aes(x = minutes)) +
+  geom_histogram(color = "black", fill = "#7bc133", bins = 30) +
+  labs(title = "Minutes Distribution") +
+  theme_minimal()
+
+# Identify the outlier
+outlier <- data[which.max(data$minutes), c("player_name", "opponent_name", "minutes")]
+outlier
+
+# After checking the correct value in WTA website, let's correct the minutes value in this match
+data[data$player_name == "Camila Osorio" & data$opponent_name == "Ons Jabeur", "minutes"] <- 122
+
+remove(outlier)
+
+```
+In this example however, the outlier identified in opponent/player hieght is a correct value. She's the american player Lauren Davis with only 1.57 m as height.
+
+```{r}
+# Boxplot of opponent_ht with annotations for outlier names
+ggplot(data, aes(y = opponent_ht)) +
+  geom_boxplot(fill = "#7bc133", color = "black") +
+  labs(y = "Opponent Height (cm)", title = "Boxplot of Opponent Height") +
+  theme_minimal() +
+  geom_text(aes(label = ifelse(opponent_ht %in% boxplot.stats(data$opponent_ht)$out, opponent_name, ""),
+                x = 0.01), hjust = 0, vjust = 0, color = "red", size = 7)
+
+
+```
+
+
+## Unsupervised Learning
+
+
+
+```{r}
+library(dplyr)
+library(cluster)
+
+# Combine player and opponent statistics
+combined_data <- bind_rows(
+  select(data, player_name, p_ace, p_df, p_svpt, p_1stWon, p_2ndWon, p_SvGms, p_bpSaved, p_bpFaced),
+  select(data, opponent_name = player_name, p_ace = o_ace, p_df = o_df, p_svpt = o_svpt, p_1stWon = o_1stWon, p_2ndWon = o_2ndWon, p_SvGms = o_SvGms, p_bpSaved = o_bpSaved, p_bpFaced = o_bpFaced)
+)
+
+# Group by player_name and calculate the mean of each match statistic
+unsup_data <- combined_data %>%
+  group_by(player_name) %>%
+  summarize(
+    avg_p_ace = mean(p_ace),
+    avg_p_df = mean(p_df),
+    avg_p_svpt = mean(p_svpt),
+    avg_p_1stWon = mean(p_1stWon),
+    avg_p_2ndWon = mean(p_2ndWon),
+    avg_p_SvGms = mean(p_SvGms),
+    avg_p_bpSaved = mean(p_bpSaved),
+    avg_p_bpFaced = mean(p_bpFaced)
+  )
+
+unsup_data <- na.omit(unsup_data)
+remove(combined_data)
+
+# Identify numeric columns
+numeric_cols <- sapply(unsup_data, is.numeric)
+
+# Scale only numeric columns
+scaled_unsup_data <- unsup_data
+scaled_unsup_data[numeric_cols] <- scale(unsup_data[numeric_cols])
+
+# Convert to data frame
+scaled_unsup_data <- as.data.frame(scaled_unsup_data)
+```
+
+I will add a dummy variable indicating if the player has been in the top 10 for that season or not.
+
+```{r}
+library(dplyr)
+
+# Filter the players that were in the top 30 in the 2023 season
+top_10 <- data %>%
+  filter(player_rank <= 10) %>%
+  distinct(player_name)
+
+scaled_unsup_data <- scaled_unsup_data %>%
+  mutate(top_10 = as.numeric(player_name %in% top_10$player_name))
+
+remove(top_10)
+
+```
+
+
+Top 30
+
+```{r}
+library(dplyr)
+
+# Filter the players that were in the top 30 in the 2023 season
+top_30 <- data %>%
+  filter(player_rank <= 30) %>%
+  distinct(player_name)
+
+scaled_unsup_data <- scaled_unsup_data %>%
+  mutate(top_30 = as.numeric(player_name %in% top_30$player_name))
+
+remove(top_30)
+
+```
+
+
+### TOP 30
+
+#### 1. PCA
+
+```{r}
+
+## PCA TO TOP 30 PLAYERS ONLY 
+
+library(factoextra)
+
+# Filter out rows where top_10 is equal to 1
+scaled_unsup_data_filtered_30 <- scaled_unsup_data[scaled_unsup_data$top_30 == 1, ]
+
+# Exclude the player_name and top_30 columns
+scaled_unsup_data_numeric_30 <- scaled_unsup_data_filtered_30[, -c(1, 10,11)]
+
+# Perform PCA
+pca_result_30 <- prcomp(scaled_unsup_data_numeric_30)
+
+# Set row names of the PCA result to player names
+rownames(pca_result_30$x) <- scaled_unsup_data_filtered_30$player_name
+
+fviz_eig(pca_result_30, addlabels = TRUE, ylim=c(0,70), barfill="#acdf77")
+
+```
+```{r}
+pca_result_30
+
+summary(pca_result_30)
+```
+```{r}
+# Create PCA plot 
+fviz_pca_biplot(pca_result_30, repel = TRUE, geom = "point", col.ind = "#acdf77", col.var = "#987654")
+```
+
+
+```{r}
+# PCA plot with player names
+PCA <- fviz_pca_biplot(pca_result_30, repel = TRUE,col.ind="cos2",col.var = "#acdf77", gradient.cols = c("#993300", "#339966", "#1d3b58"))
+
+PCA
+
+ggsave("pca_ppt.jpeg", width = 30, height = 18, units = "cm", dpi = 300)
+
+remove(PCA)
+```
+#### 2. K-medoids
+
+Optimal k value determintaion
+
+A. The Elbow mthod
+```{r}
+
+library(factoextra)
+
+# Plot clusters vs within sum of squares
+fviz_nbclust(scaled_unsup_data_numeric_30, pam, method = "wss", linecol = "#993300")
+
+```
+Since the elbow method doesn't give a good result let's try the silhouette method.
+
+B. The silhouette method
+
+```{r}
+library(cluster)
+library(factoextra)
+
+# Define a function to calculate average silhouette for k
+avg_sil <- function(k, scaled_unsup_data_numeric_30) {
+  pam.res <- pam(scaled_unsup_data_numeric_30, k = k)
+  ss <- silhouette(pam.res$clustering, dist(scaled_unsup_data_numeric_30))
+  mean(ss[, 3])
+}
+
+# Calculate average silhouette for k = 2 to k = 10
+avg_sil_values <- sapply(2:10, function(k) avg_sil(k, scaled_unsup_data_numeric_30))
+
+# Plot average silhouette width
+plot(2:10, avg_sil_values, type = "b", pch = 19, frame = FALSE, 
+     xlab = "Number of clusters K", ylab = "Average Silhouette Width",)
+
+# Add vertical line for the optimal number of clusters
+abline(v = which.max(avg_sil_values) + 1, col = "#993300", lty = 2)
+
+```
+
+From the 2 methods above, the optimal number of clusters is 2. Let's experiment.
+
+
+```{r}
+set.seed(1)
+
+rownames(scaled_unsup_data_numeric_30) <- scaled_unsup_data_filtered_30$player_name
+
+# Perform k-medoids clustering with k = 2 clusters
+kmed <- pam(scaled_unsup_data_numeric_30, k = 2)
+
+# Plot results of the final k-medoids model
+k2 <- fviz_cluster(kmed, data = scaled_unsup_data_numeric_30, palette=c("#993300", "#1d3b58"), repel = TRUE)
+ 
+k2
+
+ggsave("k2_ppt.jpeg", width = 30, height = 18, units = "cm", dpi = 300)
+
+
+```
+These results reveal the presence of two distinct clusters. Further analysis indicates that cluster 1 comprises over 93% of the top 10 players. This clustering aligns logically with the nature of tennis, as top players are expected to excel across various performance metrics discussed earlier.
+
+
+#### 3. Hierarchical Clustering 
+
+##### i. Complete Linkage
+
+Complete Linkage (or Maximum Linkage): This method calculates the distance between two clusters based on the maximum distance between any pair of points in the two clusters. It tends to produce compact, spherical clusters and is less sensitive to outliers.
+
+```{r}
+library(dendextend)
+# For aesthetic reasons, I will shorten the names to first name initial + last name
+full_names <- scaled_unsup_data_filtered_30$player_name
+abbreviate_name <- function(full_name) {
+  name_parts <- strsplit(full_name, " ")[[1]]
+  first_initial <- substr(name_parts[1], 1, 1)
+  result <- paste(first_initial, ".", paste(name_parts[-1], collapse = " "), sep = " ")
+  return(result)
+}
+abbreviated_names <- sapply(full_names, abbreviate_name)
+rownames(scaled_unsup_data_numeric_30) <- abbreviated_names
+
+# Perform complete hierarchical clustering
+hc_c_30 <- hclust(dist(scaled_unsup_data_numeric_30), method = "complete")
+
+# Plot the dendrogram
+dend_c_30 <- as.dendrogram(hc_c_30)
+dend_c_30<- color_branches(dend_c_30)
+dend_c_30 %>% 
+  set("labels_col", "black") %>% set("labels_cex", 0.7) %>%
+  set("nodes_pch", 19)  %>% 
+  set("nodes_cex", 0.7) %>% 
+  set("nodes_col", "#acdf77") %>% 
+  plot(horiz = TRUE)
+
+```
+
+
+##### ii. Average Linkage 
+
+Average Linkage: This method calculates the distance between two clusters based on the average distance between all pairs of points in the two clusters. It often produces more balanced clusters and is less prone to chaining than complete linkage. However, it can be sensitive to outliers and tends to create clusters of similar sizes.
+
+```{r}
+library(dendextend)
+
+# Perform average hierarchical clustering
+hc_a_30 <- hclust(dist(scaled_unsup_data_numeric_30), method = "average")
+
+# Plot the dendrogram
+dend_a_30 <- as.dendrogram(hc_a_30)
+dend_a_30<- color_branches(dend_a_30)
+dend_a_30 %>% 
+  set("labels_col", "black") %>% set("labels_cex", 0.7) %>%
+  set("nodes_pch", 19)  %>% 
+  set("nodes_cex", 0.7) %>% 
+  set("nodes_col", "#acdf77") %>% 
+  plot(horiz = TRUE)
+```
+
+##### iii. Comparison
+
+
+```{r}
+dl_c_a <- dendlist(dend_c_30, dend_a_30)
+tanglegram(dl_c_a, 
+           common_subtrees_color_lines = FALSE, highlight_distinct_edges  = TRUE, highlight_branches_lwd=FALSE, 
+           margin_inner=7,
+           lwd=2,
+           main_left = "Complete",
+           main_right = "Average"
+)
+
+```
+
+To gain a comprehensive understanding of the diversity in player performance and playing styles among the top 30 WTA players, I compared the outcomes of the complete and average linkage methods. As illustrated in the figure above, while the inter-cluster distances exhibited variability, the clusters maintained consistent compositions. Notably, players like Kvitova, Samsonova, Sabalenka, and Rybakina, known for their powerful serves and proficiency in scoring aces, consistently formed a cluster across both methods.
+
+An additional noteworthy observation is the proximity between Iga Swiantek and Anett Kontaveit in the complete method, indicating similarities in their playing styles. However, in the average method, this proximity was diminished, potentially influenced by their respective rankings in the 2023 season—Swiantek held the top rank while Kontaveit ranked 17th, reflecting differences in overall performance.
+
+Overall, the complete method highlighted distinctions in playing styles, while the average method moderated these differences, resulting in more balanced clusters that better represent the overall performance of players.
+
+## Supervised Learning 
+
+For this part of the project, I will select a subset of the initial data and I will add a new column `set1_p_win` that is equal to 1 if p_set1 is greater than o_set1. This variable will tell us if the player has won the 1st set or not.
+
+```{r}
+sup_data <- data[, c("win", "grand_slam", "final_rounds", "surface", "player_hand", "player_ht", "player_age", 
+                     "opponent_hand", "opponent_ht", "opponent_age", "p_set1", "o_set1", 
+                     "minutes", "player_rank", "opponent_rank")]
+
+sup_data$set1_p_win <- ifelse(sup_data$p_set1 > sup_data$o_set1, 1, 0)
+
+sup_data <- sup_data[, -c(11, 12)]  
+
+
+```
+
+
+Encoding the resting categorical variables:
+
+```{r}
+
+sup_data$player_hand_R <- ifelse(sup_data$player_hand == "R", 1, 0)
+sup_data$opponent_hand_R <- ifelse(sup_data$opponent_hand == "R", 1, 0)
+
+sup_data$surface_grass <- ifelse(sup_data$surface == "Grass", 1, 0)
+sup_data$surface_clay <- ifelse(sup_data$surface == "Clay", 1, 0)
+
+sup_data <- sup_data[, -c(4, 5,8)]  
+
+
+```
+
+Scaling
+
+```{r}
+# Select only numeric columns except for "win", "GS", and "final_rounds"
+sup_numeric_data <- sup_data[, sapply(sup_data, is.numeric) & !names(sup_data) %in% c("win", "final_rounds","grand_slam","set1_p_win","player_hand_R","opponent_hand_R","surface_grass","surface_clay")]
+
+# Scale the numeric columns
+scaled_sup_numeric_data <- scale(sup_numeric_data)
+
+# Combine the scaled numeric columns with the non-numeric columns
+scaled_sup_data <- cbind(sup_data[, !sapply(sup_data, is.numeric) | names(sup_data) %in% c("win", "final_rounds","grand_slam","set1_p_win","player_hand_R","opponent_hand_R","surface_grass","surface_clay")], scaled_sup_numeric_data)
+
+remove(scaled_sup_numeric_data, sup_numeric_data)
+```
+
+Correlation
+
+```{r}
+
+library(corrplot)
+
+M <- cor(scaled_sup_data)
+
+# Plotting
+corrplot(M, 
+         col = colorRampPalette(c("#339966", "white", "#993300"))(100),         
+         tl.col = "black",      
+         tl.srt = 45,           
+         tl.pos = "lt",         
+         tl.cex = 0.7)
+
+
+```
+
+### 1. Logistic Regression
+
+Splitting data into Training and Test datasets.
+
+```{r}
+library(caret)
+
+set.seed(123)
+
+# Split data into training (80%) and test (20%) sets
+train_indices <- createDataPartition(sup_data$win, p = 0.8, list = FALSE)
+train_data <- sup_data[train_indices, ]
+test_data <- sup_data[-train_indices, ]
+
+
+# Split data into training (80%) and test (20%) sets
+scaled_train_indices <- createDataPartition(scaled_sup_data$win, p = 0.8, list = FALSE)
+scaled_train_data <- scaled_sup_data[scaled_train_indices, ]
+scaled_test_data <- scaled_sup_data[-scaled_train_indices, ]
+
+```
+
+```{r}
+lr_f_model <- glm(win ~.,family=binomial(link='logit'),data=scaled_train_data)
+
+summary(lr_f_model)
+
+```
+
+let's check for multicollinearity.
+```{r}
+car::vif(lr_f_model)
+```
+As a rule of thumb, a VIF value that exceeds 5 or 10 indicates a problematic amount of collinearity. In our example, there is no collinearity: all variables have a value of VIF well below 5.
+
+```{r}
+lr_r_model <- step(lr_f_model, direction = "backward")
+
+summary(lr_r_model)
+```
+From the output above, we can see that:
+- The players who win the 1st set, compared to those who lose their 1st set, increase their win changes (log odds) by 3.02506, keeping everything else constant.
+To understand more the coefficients, let's exponentiate them and interpret them as odds-ratios.
+
+```{r}
+exp(coef(lr_r_model))
+```
+
+We can see that from the output above:
+- For the players who win the 1st set, compared to those who lose their 1st set, the odds of winning increase by a factor of approximately 20.6.
+- For each 1 centimeter increase in the opponent height, the odds of winning increase by a factor of approximately 1.2.
+- For each unit increase in the player's ranking, the odds of winning decrease by a factor of approximately 0.64 (the log odds in the previous output is negative `player_rank -0.44054`)
+- For each 1 unit increase in the opponent ranking, the odds of winning increase by a factor of approximately 1.53.
+
+#### Confusion Matrix
+
+
+```{r}
+library(caret)
+
+# Predict probabilities for the test data
+lr_r_predicted_prob <- predict(lr_r_model, newdata = scaled_test_data, type = "response")
+
+# Convert probabilities to binary predictions (0 or 1) using a threshold of 0.5
+lr_r_predicted_classes <- ifelse(lr_r_predicted_prob > 0.5, 1, 0)
+
+# Create confusion matrix
+lr_confusion_matrix <- confusionMatrix(factor(lr_r_predicted_classes), factor(scaled_test_data$win))
+
+# Display confusion matrix
+lr_confusion_matrix
+
+```
+The **overall accuracy** of the model is 0.7877, which means it correctly predicts 78.77% of the cases. 
+The **confidence interval for the accuracy** indicates the range within which the true accuracy is likely to fall. In this case, it ranges from 0.7265 to 0.7265
+**Kappa** is a measure of agreement between the predicted and observed classifications. A kappa value of 1 indicates perfect agreement, while 0 indicates no agreement beyond chance. Here, the kappa value is 0.5696, suggesting moderate agreement.
+**Sensitivity a.k.a. "True Positive Rate"** measures the proportion of actual positives that are correctly identified by the model. Here, it's 0.8000, indicating that the model correctly identifies 80% of the positive cases.
+**Specificity a.k.a. "True Negative Rate"** measures the proportion of actual negatives that are correctly identified by the model. Here, it's 0.7717, indicating that the model correctly identifies 77.17% of the negative cases.
+The **Balanced Accuracy** is the average of sensitivity and specificity. Here, it's 0.7859.
+
+#### ROC Curve
+
+```{r}
+library(pROC)
+
+# Create an ROC curve object
+lr_r_roc <- roc(scaled_test_data$win, lr_r_predicted_prob)
+
+# Plot the ROC curve
+plot(lr_r_roc, col = "#993300", lwd = 2,
+     main = "ROC Curve",
+     xlab = "Specificity (False Positive Rate)",
+     ylab = "Sensitivity (True Positive Rate)",
+     plot = TRUE, print.auc = TRUE)
+
+```
+The AUC is calculated as 0.846. This means that there is an 84.6% chance that the model will be able to distinguish between positive and negative outcomes. In other words, the model has a good discriminatory ability, with a higher probability of correctly ranking a randomly chosen positive instance higher than a randomly chosen negative instance.
+
+```{r}
+
+train_data_f <- train_data
+# Subset train_data to include only the specified columns
+train_data <- train_data[, c("win", "set1_p_win", "opponent_age", "player_rank", "opponent_rank")]
+scaled_train_data <- scaled_train_data[, c("win", "set1_p_win", "opponent_age", "player_rank", "opponent_rank")]
+
+test_data_f <- test_data
+# Subset test_data to include only the specified columns
+test_data <- test_data[, c("win", "set1_p_win", "opponent_age", "player_rank", "opponent_rank")]
+scaled_test_data <- scaled_test_data[, c("win", "set1_p_win", "opponent_age", "player_rank", "opponent_rank")]
+```
+
+
+### 2. Decion Tree
+
+```{r}
+# Load the rpart package
+library(rpart)
+
+set.seed(123)
+
+
+# Convert the "win" column in train_data to a factor
+train_data$win <- factor(train_data$win)
+
+# Convert the "win" column in test_data to a factor
+test_data$win <- factor(test_data$win)
+
+# Define the decision tree model
+dt_model <- rpart(win ~ ., data = train_data)
+
+# Make predictions on the test data
+dt_predicted_classes <- predict(dt_model, test_data, type = "class")
+
+# Evaluate performance
+dt_confusion_matrix <- table(dt_predicted_classes, test_data$win)
+dt_accuracy <- sum(diag(dt_confusion_matrix)) / sum(dt_confusion_matrix)
+
+# Print confusion matrix and accuracy
+print(dt_confusion_matrix)
+print(dt_accuracy)
+
+```
+```{r}
+# Load the rpart.plot package
+library(rpart.plot)
+
+# Plot the decision tree
+rpart.plot(dt_model)
+
+```
+
+```{r}
+dt_model
+```
+We can see in this model above that the only feature highlighted is the one related to winning the 1st set. For the sake of experimentation, I will add the other variables that were eliminated by the the backward selection in the logistic regression model and let the decision tree model do the feature selection.
+
+
+```{r}
+# Load the rpart package
+library(rpart)
+
+
+set.seed(123)
+
+# Convert the "win" column in train_data to a factor
+train_data_f$win <- factor(train_data_f$win)
+
+# Convert the "win" column in test_data to a factor
+test_data_f$win <- factor(test_data_f$win)
+
+# Define the decision tree model
+dt_f_model <- rpart(win ~ ., data = train_data_f)
+
+# Make predictions on the test data
+dt_f_predicted_classes <- predict(dt_f_model, test_data_f, type = "class")
+
+# Evaluate performance
+dt_f_confusion_matrix <- table(dt_f_predicted_classes, test_data_f$win)
+dt_f_accuracy <- sum(diag(dt_f_confusion_matrix)) / sum(dt_f_confusion_matrix)
+
+# Print confusion matrix and accuracy
+print(dt_f_confusion_matrix)
+print(dt_f_accuracy)
+```
+```{r}
+dt_f_model
+```
+
+```{r}
+rpart.plot(dt_f_model)
+```
+
+
+### 3. Random Forest
+
+```{r}
+# Load the randomForest package
+library(randomForest)
+
+set.seed(22)
+
+# Define the Random Forest model
+rf_model <- randomForest(win ~ .,
+                         data = train_data_f,
+                         ntree = 500,  # Number of trees in the forest
+                         mtry = 2)     # Number of variables randomly sampled as candidates at each split
+
+# Make predictions on the test data
+rf_predicted_classes <- predict(rf_model, test_data_f)
+
+# Evaluate performance
+rf_confusion_matrix <- table(rf_predicted_classes, test_data_f$win)
+rf_accuracy <- sum(diag(rf_confusion_matrix)) / sum(rf_confusion_matrix)
+
+# Print confusion matrix and accuracy
+print(rf_confusion_matrix)
+print(rf_accuracy)
+
+```
+
+
+## Challenges & Limitations
+
+- Time Discounting: naive historical averaging overlooks the fact that not all of a player’s past matches are equally relevant in predicting their performance. We can address this by taking weighted averages, and giving a higher weight to past matches which we think are more relevant for predicting the upcoming match.
+- Others features: Injuries, Physical form, etc.
+
