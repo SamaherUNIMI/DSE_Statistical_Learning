@@ -8,11 +8,11 @@ The project aims to provide insights into WTA data using a combination of unsupe
 
 ### Key Components:
 
-👉 **Presentation:** Provides an overview of the project and its findings, offering a high-level perspective.
+👉 [**Presentation:**](https://github.com/SamaherUNIMI/DSE_Statistical_Learning_Project/blob/main/SL_SamaherBrahem_Tennis_Project_Slides.pptx) Provides an overview of the project and its findings, offering a high-level perspective.
 
-👉 **Report:** Offers a detailed analysis of the methodologies, results, and interpretations.
+👉 [**Report:**](https://github.com/SamaherUNIMI/DSE_Statistical_Learning_Project/blob/main/SL_SamaherBrahem_Tennis_Project_Report.pdf) Offers a detailed analysis of the methodologies, results, and interpretations.
 
-👉 **Notebook:** Contains the R code used for analysis, allowing for transparency and reproducibility.
+👉 [**Notebook:**](https://github.com/SamaherUNIMI/DSE_Statistical_Learning_Project/blob/main/SL_SamaherBrahem_Tennis_Project_Notebook.html) Contains the R code used for analysis, allowing for transparency and reproducibility.
 
 ## Methodology
 
